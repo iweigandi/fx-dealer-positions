@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+.cache/
+*.log
+*.aux
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+FinFutYY.txt
+F_TFF_2006_2016.txt
+ecb_spf_test.py

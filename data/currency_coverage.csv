@@ -1,0 +1,10 @@
+currency,first_date,last_date,observations,status,notes
+EUR,2010-07-31,2025-11-30,185,included,
+GBP,2010-07-31,2025-11-30,185,included,
+JPY,2010-07-31,2025-11-30,185,included,
+CHF,2010-07-31,2025-11-30,185,included,
+CAD,2010-07-31,2025-11-30,185,included,
+AUD,2010-07-31,2025-11-30,185,included,
+NZD,2010-07-31,2025-11-30,185,included,
+ZAR,2015-07-31,2025-11-30,116,included,
+MXN,2010-07-31,2025-11-30,185,included,
