@@ -10,3 +10,9 @@ __pycache__/
 FinFutYY.txt
 F_TFF_2006_2016.txt
 ecb_spf_test.py
+methodology/*.aux
+methodology/*.fdb_latexmk
+methodology/*.fls
+methodology/*.log
+methodology/*.out
+methodology/*.pdf

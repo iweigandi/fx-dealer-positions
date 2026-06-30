@@ -44,6 +44,7 @@ class CurrencyConfig:
     cftc_code: str
     label: str
     rate_3m_series: str
+    rate_source: str = "fred"
 
 
 CURRENCIES: list[CurrencyConfig] = [
@@ -56,6 +57,7 @@ CURRENCIES: list[CurrencyConfig] = [
     CurrencyConfig("NZD", "DEXUSNZ", True, "112741", "NZD/USD", "IR3TIB01NZM156N"),
     CurrencyConfig("ZAR", "DEXSFUS", False, "122741", "ZAR/USD", "IR3TIB01ZAM156N"),
     CurrencyConfig("MXN", "DEXMXUS", False, "095741", "MXN/USD", "IR3TIB01MXM156N"),
+    CurrencyConfig("BRL", "DEXBZUS", False, "102741", "BRL/USD", "4389", "bcb_sgs"),
 ]
 
 CONTROL_SERIES = {
@@ -117,13 +119,51 @@ def fred_series(series_id: str, start: str = START_DATE, end: str = END_DATE) ->
     return out.loc[start:end, "value"].rename(series_id)
 
 
+
+def bcb_sgs_series(series_id: str, start: str = START_DATE, end: str = END_DATE) -> pd.Series:
+    """Fetch a Banco Central do Brasil SGS series through its public JSON endpoint."""
+    cache_path = CACHE_DIR / f"bcb_sgs_{series_id}.csv"
+    cache_is_fresh = cache_path.exists() and (time.time() - cache_path.stat().st_mtime < CACHE_MAX_AGE_SECONDS)
+    if cache_is_fresh:
+        raw = pd.read_csv(cache_path)
+    else:
+        url = f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{series_id}/dados"
+        frames = []
+        chunk_start = pd.Timestamp(start)
+        final = pd.Timestamp(end)
+        while chunk_start <= final:
+            chunk_end = min(chunk_start + pd.DateOffset(years=9, months=11), final)
+            response = requests.get(
+                url,
+                params={
+                    "formato": "json",
+                    "dataInicial": chunk_start.strftime("%d/%m/%Y"),
+                    "dataFinal": chunk_end.strftime("%d/%m/%Y"),
+                },
+                timeout=45,
+            )
+            response.raise_for_status()
+            frames.append(pd.DataFrame(response.json()))
+            chunk_start = chunk_end + pd.DateOffset(days=1)
+        raw = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+        raw.to_csv(cache_path, index=False)
+    if "data" not in raw or "valor" not in raw:
+        raise ValueError(f"Unexpected BCB SGS response for {series_id}")
+    out = raw.rename(columns={"data": "date", "valor": "value"})
+    out["date"] = pd.to_datetime(out["date"], format="%d/%m/%Y", errors="coerce")
+    out["value"] = pd.to_numeric(out["value"], errors="coerce")
+    out = out.dropna(subset=["date", "value"]).set_index("date").sort_index()
+    return out.loc[start:end, "value"].rename(f"BCB_SGS_{series_id}")
+
 def monthly_fx(series_id: str, invert: bool) -> pd.Series:
     s = fred_series(series_id).dropna()
     s = 1.0 / s if invert else s
     return s.resample("ME").last().rename("E")
 
 
-def monthly_rate(series_id: str) -> pd.Series:
+def monthly_rate(series_id: str, source: str = "fred") -> pd.Series:
+    if source == "bcb_sgs":
+        return (bcb_sgs_series(series_id).dropna() / 100.0).resample("ME").last()
     return (fred_series(series_id).dropna() / 100.0).resample("ME").last()
 
 
@@ -144,7 +184,7 @@ def load_tff() -> pd.DataFrame:
     cache_path = CACHE_DIR / "cftc_tff_financial_futures.csv"
     cache_is_fresh = cache_path.exists() and (time.time() - cache_path.stat().st_mtime < CACHE_MAX_AGE_SECONDS)
     if cache_is_fresh:
-        df = pd.read_csv(cache_path)
+        df = pd.read_csv(cache_path, low_memory=False)
     else:
         df = cot.cot_all(cot_report_type="traders_in_financial_futures_fut", verbose=False)
         df.to_csv(cache_path, index=False)
@@ -174,7 +214,7 @@ def dealer_position(tff: pd.DataFrame, cftc_code: str) -> pd.DataFrame:
 
 def build_currency_panel(config: CurrencyConfig, tff: pd.DataFrame, ctrl: pd.DataFrame) -> pd.DataFrame:
     fx = monthly_fx(config.fx_series, config.invert_fx)
-    foreign_rate = monthly_rate(config.rate_3m_series)
+    foreign_rate = monthly_rate(config.rate_3m_series, config.rate_source)
     us_rate = monthly_rate("TB3MS")
     idiff = (foreign_rate - us_rate).rename("idiff")
     pos = dealer_position(tff, config.cftc_code)
@@ -327,6 +367,91 @@ def save_fit_charts(per_currency: dict[str, pd.DataFrame], per_results: dict[str
         plt.close(fig)
 
 
+POSITION_GROUPS = {
+    "dealer": ("Dealer_Positions_Long_All", "Dealer_Positions_Short_All"),
+    "asset_manager": ("Asset_Mgr_Positions_Long_All", "Asset_Mgr_Positions_Short_All"),
+    "leveraged_funds": ("Lev_Money_Positions_Long_All", "Lev_Money_Positions_Short_All"),
+    "other_reportable": ("Other_Rept_Positions_Long_All", "Other_Rept_Positions_Short_All"),
+    "nonreportable": ("NonRept_Positions_Long_All", "NonRept_Positions_Short_All"),
+}
+
+
+def participant_decomposition(tff: pd.DataFrame, configs: list[CurrencyConfig]) -> pd.DataFrame:
+    rows = []
+    date_col = "Report_Date_as_YYYY-MM-DD"
+    for config in configs:
+        df = tff[
+            (tff["CFTC_Contract_Market_Code"].astype(str) == config.cftc_code)
+            & (tff["FutOnly_or_Combined"] == "FutOnly")
+        ].copy()
+        if df.empty:
+            continue
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df = df.dropna(subset=[date_col]).set_index(date_col).sort_index().loc[START_DATE:END_DATE]
+        monthly = df.resample("ME").last().dropna(subset=["Open_Interest_All"])
+        oi_ma12 = monthly["Open_Interest_All"].rolling(12, min_periods=6).mean()
+        out = pd.DataFrame(index=monthly.index)
+        out["currency"] = config.code
+        out["open_interest"] = monthly["Open_Interest_All"]
+        out["open_interest_ma12"] = oi_ma12
+        for group, (long_col, short_col) in POSITION_GROUPS.items():
+            out[f"{group}_net"] = monthly[long_col] - monthly[short_col]
+            out[f"{group}_net_scaled"] = 100.0 * out[f"{group}_net"] / oi_ma12
+        rows.append(out.reset_index(names="date"))
+    if not rows:
+        return pd.DataFrame()
+    return pd.concat(rows, ignore_index=True).dropna(subset=["dealer_net_scaled"])
+
+
+def save_participant_decomposition(decomp: pd.DataFrame) -> None:
+    if decomp.empty:
+        return
+    decomp.to_csv(DATA_DIR / "cftc_position_decomposition.csv", index=False, float_format="%.10g")
+
+    plot_cols = ["dealer_net_scaled", "asset_manager_net_scaled", "leveraged_funds_net_scaled"]
+    aggregate = decomp.groupby("date")[plot_cols].mean().sort_index()
+    labels = {
+        "dealer_net_scaled": "Dealers",
+        "asset_manager_net_scaled": "Asset managers",
+        "leveraged_funds_net_scaled": "Leveraged funds",
+    }
+    fig, ax = plt.subplots(figsize=(6, 4.2), dpi=300)
+    for i, col in enumerate(plot_cols):
+        ax.plot(pd.to_datetime(aggregate.index), aggregate[col], color=PALETTE[i], label=labels[col])
+    ax.axhline(0, color=PALETTE[8], lw=0.8, alpha=0.7)
+    ax.set_title("FX Futures Net Positions by Participant Type")
+    ax.set_ylabel("Net position (% of 12-month average open interest)")
+    ax.xaxis.set_major_locator(mdates.YearLocator(3))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    ax.legend(loc="upper left")
+    add_note(fig, "Source: Author's calculations using CFTC Traders in Financial Futures data.")
+    plt.subplots_adjust(left=0.13, right=0.97, top=0.86, bottom=0.22)
+    fig.savefig(CHART_DIR / "position_decomposition.png", bbox_inches="tight")
+    plt.close(fig)
+
+    cross = decomp.groupby("currency")[["dealer_net_scaled", "asset_manager_net_scaled", "leveraged_funds_net_scaled"]].mean()
+    fig, ax = plt.subplots(figsize=(6, 4.2), dpi=300)
+    ax.scatter(cross["dealer_net_scaled"], cross["leveraged_funds_net_scaled"], color=PALETTE[0], alpha=0.85, s=32)
+    for ccy, row in cross.iterrows():
+        ax.annotate(ccy, (row["dealer_net_scaled"], row["leveraged_funds_net_scaled"]), xytext=(4, 3), textcoords="offset points", fontsize=7)
+    valid = cross[["dealer_net_scaled", "leveraged_funds_net_scaled"]].dropna()
+    if valid.shape[0] >= 3:
+        fit = run_ols(valid["leveraged_funds_net_scaled"], valid[["dealer_net_scaled"]], hac_lags=0)
+        xline = np.linspace(valid["dealer_net_scaled"].min(), valid["dealer_net_scaled"].max(), 100)
+        ax.plot(xline, fit.params["const"] + fit.params["dealer_net_scaled"] * xline, color=PALETTE[1], lw=1.3)
+    ax.axhline(0, color=PALETTE[8], lw=0.8, alpha=0.7)
+    ax.axvline(0, color=PALETTE[8], lw=0.8, alpha=0.7)
+    ax.set_title("Dealers and Leveraged Funds Across Currencies")
+    ax.set_xlabel("Average dealer net position")
+    ax.set_ylabel("Average leveraged-fund net position")
+    add_note(fig, "Source: Author's calculations using CFTC Traders in Financial Futures data.")
+    plt.subplots_adjust(left=0.13, right=0.97, top=0.86, bottom=0.22)
+    fig.savefig(CHART_DIR / "dealer_vs_leveraged_funds.png", bbox_inches="tight")
+    plt.close(fig)
+
+
 def main() -> None:
     ensure_dirs()
     set_custom_style()
@@ -350,6 +475,9 @@ def main() -> None:
                     "first_date": df.index.min().date().isoformat(),
                     "last_date": df.index.max().date().isoformat(),
                     "observations": int(df.shape[0]),
+                    "rate_source": config.rate_source,
+                    "rate_series": config.rate_3m_series,
+                    "cftc_code": config.cftc_code,
                     "status": "included",
                     "notes": "",
                 }
@@ -361,6 +489,9 @@ def main() -> None:
                     "first_date": "",
                     "last_date": "",
                     "observations": 0,
+                    "rate_source": config.rate_source,
+                    "rate_series": config.rate_3m_series,
+                    "cftc_code": config.cftc_code,
                     "status": "excluded",
                     "notes": str(exc),
                 }
@@ -416,6 +547,8 @@ def main() -> None:
     save_panel_scatter(panel)
     save_r2(per_table)
     save_fit_charts(per_currency, per_results)
+    decomp = participant_decomposition(tff, [config for config in CURRENCIES if config.code in per_currency])
+    save_participant_decomposition(decomp)
 
     print(f"Wrote {DATA_DIR / 'panel_data.csv'}")
     print(f"Included currencies: {', '.join(sorted(per_currency))}")

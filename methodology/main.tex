@@ -16,7 +16,7 @@
 This project constructs a monthly panel linking currency premia, short-rate differentials, and dealer positioning in foreign-exchange futures markets. The measure is intended to summarize how intermediary balance-sheet positions in currency futures covary with exchange-rate movements and expected currency returns.
 
 \section{Data}
-Exchange rates, short-term interest rates, and global controls are obtained from public FRED series. Dealer positions and open interest are obtained from the CFTC Traders in Financial Futures reports. The current sample includes AUD, CAD, CHF, EUR, GBP, JPY, MXN, NZD, and ZAR against the US dollar. Currencies are included when the exchange rate, the short-rate differential, and the CFTC futures-position series can be aligned at monthly frequency.
+Exchange rates, short-term interest rates, and global controls are obtained from public FRED series, except for BRL, where the short-rate proxy is the Banco Central do Brasil CDI series from SGS. Dealer positions and open interest are obtained from the CFTC Traders in Financial Futures reports. The current sample includes AUD, BRL, CAD, CHF, EUR, GBP, JPY, MXN, NZD, and ZAR against the US dollar. Currencies are included when the exchange rate, the short-rate differential, and the CFTC futures-position series can be aligned at monthly frequency.
 
 \section{Variable Construction}
 Let $E_{i,t}$ denote the end-of-month exchange rate for currency $i$ against the US dollar, expressed consistently so that an increase is a depreciation of the foreign currency against the dollar for currencies quoted as local currency per US dollar, with inverted FRED dollar-per-foreign-currency series where needed. The monthly exchange-rate change is
@@ -25,20 +25,21 @@ Let $E_{i,t}$ denote the end-of-month exchange rate for currency $i$ against the
 \]
 The short-rate differential is
 \[
-idiff_{i,t}=i_{i,t}^{3m}-i_{US,t}^{3m}.
+idiff_{i,t}=i_{i,t}^{s}-i_{US,t}^{3m}.
 \]
+For most currencies $i_{i,t}^{s}$ is a three-month money-market rate. For BRL it is a CDI short-rate proxy from Banco Central do Brasil SGS series 4389, reflecting the absence of a comparable public three-month BRL series in the FRED/OECD source used for the rest of the panel.
 Currency excess returns are approximated by
 \[
 rx_{i,t}=idiff_{i,t}-\Delta e_{i,t}.
 \]
-Dealer positions are measured as dealer long positions minus dealer short positions in CFTC Traders in Financial Futures data. The normalized dealer-position measure is
+Dealer positions are measured as dealer long positions minus dealer short positions in CFTC Traders in Financial Futures data. The same construction is also reported for asset managers, leveraged funds, other reportables, and non-reportables. The normalized dealer-position measure is
 \[
 f^*_{i,t}=100\times\frac{DealerLong_{i,t}-DealerShort_{i,t}}{\overline{OI}_{i,t}^{12m}},
 \]
 where $\overline{OI}_{i,t}^{12m}$ is the 12-month moving average of open interest. The main dealer-position shock is $\Delta f^*_{i,t}$.
 
 \section{Empirical Specifications}
-The script reports three main specifications. First, it estimates cross-sectional relationships between average rate differentials and average dealer positions. Second, it estimates predictive regressions of next-month currency excess returns on dealer positions and rate differentials with currency fixed effects. Third, it estimates concurrent exchange-rate regressions of $\Delta e_{i,t}$ on $\Delta f^*_{i,t}$, changes in interest differentials, and global controls. Standard errors use HAC covariance estimates. As a supplementary exercise, the project also collects ECB Survey of Professional Forecasters average assumptions for the USD/EUR exchange rate and converts them into expected changes in EUR per USD. These data provide a public survey-expectations check for EUR/USD, although they do not exactly match the Consensus Economics three-month forecast horizon used in IMF WP/25/153.
+The script reports three main specifications. First, it estimates cross-sectional relationships between average rate differentials and average dealer positions. Second, it estimates predictive regressions of next-month currency excess returns on dealer positions and rate differentials with currency fixed effects. Third, it estimates concurrent exchange-rate regressions of $\Delta e_{i,t}$ on $\Delta f^*_{i,t}$, changes in interest differentials, and global controls. Standard errors use HAC covariance estimates. As supplementary survey-expectations checks, the project collects ECB Survey of Professional Forecasters assumptions for USD/EUR and Banco Central do Brasil Focus expectations for BRL/USD. These public survey series do not reproduce the Consensus Economics three-month expectations used in IMF WP/25/153, but they allow the project to distinguish observed currency premia from survey-implied expected exchange-rate changes for two currency pairs.
 
 \section{Outputs}
 The replication script writes a monthly panel, coverage diagnostics, per-currency estimates, panel regression summaries, and charts. The figures use a consistent project palette and are regenerated by the monthly GitHub Action.
