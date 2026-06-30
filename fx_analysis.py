@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 import io
+import time
 import warnings
 
 import cot_reports as cot
@@ -20,6 +21,7 @@ ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "data"
 CHART_DIR = ROOT / "chart"
 CACHE_DIR = ROOT / ".cache"
+CACHE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 
 PALETTE = [
     "#00466F",
@@ -97,7 +99,8 @@ def ensure_dirs() -> None:
 def fred_series(series_id: str, start: str = START_DATE, end: str = END_DATE) -> pd.Series:
     """Fetch a FRED series through the public graph CSV endpoint, without an API key."""
     cache_path = CACHE_DIR / f"fred_{series_id}.csv"
-    if cache_path.exists():
+    cache_is_fresh = cache_path.exists() and (time.time() - cache_path.stat().st_mtime < CACHE_MAX_AGE_SECONDS)
+    if cache_is_fresh:
         raw = pd.read_csv(cache_path)
     else:
         url = "https://fred.stlouisfed.org/graph/fredgraph.csv"
@@ -139,7 +142,8 @@ def controls() -> pd.DataFrame:
 
 def load_tff() -> pd.DataFrame:
     cache_path = CACHE_DIR / "cftc_tff_financial_futures.csv"
-    if cache_path.exists():
+    cache_is_fresh = cache_path.exists() and (time.time() - cache_path.stat().st_mtime < CACHE_MAX_AGE_SECONDS)
+    if cache_is_fresh:
         df = pd.read_csv(cache_path)
     else:
         df = cot.cot_all(cot_report_type="traders_in_financial_futures_fut", verbose=False)

@@ -20,6 +20,7 @@ Data:
 - `data/cross_section_means.csv`: currency-level sample means.
 - `data/per_currency_results.csv`: per-currency concurrent regressions.
 - `data/panel_regression_summary.csv`: panel fixed-effect regression summaries.
+- `data/ecb_spf_eur_usd_expectations.csv`: supplementary ECB SPF survey expectations for EUR/USD.
 
 Charts:
 
@@ -29,11 +30,13 @@ Charts:
 - `chart/panel_scatter.png`
 - `chart/r2_by_currency.png`
 - `chart/fit_*.png`
+- `chart/ecb_spf_eur_usd_expectations.png`
 
 ## Data Sources
 
 - FRED public CSV endpoint for exchange rates, interest rates, VIX, dollar index, and US spread controls.
 - CFTC Traders in Financial Futures reports for dealer positions and open interest.
+- ECB Survey of Professional Forecasters for a supplementary EUR/USD survey-expectations series.
 
 No FRED API key is required.
 
@@ -41,13 +44,14 @@ No FRED API key is required.
 
 For each currency, the script constructs a monthly exchange-rate series against the US dollar and computes the foreign-US 3-month interest-rate differential. Currency excess returns are measured as the interest differential minus the monthly log exchange-rate change. Dealer positioning is measured as dealer long minus short positions, scaled by a 12-month moving average of open interest.
 
-The script estimates cross-sectional, predictive, concurrent per-currency, and panel fixed-effect regressions with HAC standard errors.
+The script estimates cross-sectional, predictive, concurrent per-currency, and panel fixed-effect regressions with HAC standard errors. A supplementary script collects ECB SPF average USD/EUR assumptions and converts them into expected changes in EUR per USD. This is not identical to the Consensus Economics 3-month expectations used in IMF WP/25/153, but it provides a public, survey-based expectations check for one currency pair.
 
 ## Replication
 
 ```bash
 pip install -r requirements.txt
 python fx_analysis.py
+python fetch_ecb_spf_expectations.py
 ```
 
 The GitHub Action is configured to run monthly and refresh data and charts.

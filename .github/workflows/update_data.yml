@@ -35,10 +35,12 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run analysis pipeline
-        run: python fx_analysis.py
+        run: |
+          python fx_analysis.py
+          python fetch_ecb_spf_expectations.py
 
       - name: Commit refreshed outputs
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Update FX currency premia analysis"
-          file_pattern: "data/*.csv chart/*.png README.md fx_analysis.py requirements.txt Methodology.pdf methodology/main.tex"
+          file_pattern: "data/*.csv chart/*.png README.md fx_analysis.py fetch_ecb_spf_expectations.py requirements.txt Methodology.pdf methodology/main.tex"
