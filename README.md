@@ -23,6 +23,7 @@ Data:
 - `data/cftc_position_decomposition.csv`: dealer, asset-manager, leveraged-fund, other-reportable, and non-reportable net positions by currency.
 - `data/ecb_spf_eur_usd_expectations.csv`: supplementary ECB SPF survey expectations for EUR/USD.
 - `data/bcb_focus_brl_usd_expectations.csv`: supplementary Banco Central do Brasil Focus survey expectations for BRL/USD.
+- `data/futures_implied_fx_basis.csv`: front-futures basis computed from continuous CME FX futures and spot exchange rates.
 
 Charts:
 
@@ -36,6 +37,7 @@ Charts:
 - `chart/dealer_vs_leveraged_funds.png`
 - `chart/ecb_spf_eur_usd_expectations.png`
 - `chart/bcb_focus_brl_usd_expectations.png`
+- `chart/futures_implied_fx_basis.png`
 
 ## Data Sources
 
@@ -44,6 +46,7 @@ Charts:
 - CFTC Traders in Financial Futures reports for dealer positions, open interest, and participant-type decompositions.
 - ECB Survey of Professional Forecasters for a supplementary EUR/USD survey-expectations series.
 - Banco Central do Brasil Focus survey for supplementary BRL/USD exchange-rate expectations.
+- Yahoo Finance historical chart data for continuous CME FX futures used to construct a front-futures basis approximation.
 
 No FRED API key is required.
 
@@ -51,7 +54,7 @@ No FRED API key is required.
 
 For each currency, the script constructs a monthly exchange-rate series against the US dollar and computes the foreign-US 3-month interest-rate differential. Currency excess returns are measured as the interest differential minus the monthly log exchange-rate change. Dealer positioning is measured as dealer long minus short positions, scaled by a 12-month moving average of open interest. The project also reports comparable net-position measures for asset managers, leveraged funds, other reportables, and non-reportables.
 
-The script estimates cross-sectional, predictive, concurrent per-currency, and panel fixed-effect regressions with HAC standard errors. Supplementary scripts collect ECB SPF average USD/EUR assumptions and BCB Focus BRL/USD expectations. These public survey data are not identical to the Consensus Economics 3-month expectations used in IMF WP/25/153, but they provide transparent survey-expectations checks for two currency pairs.
+The script estimates cross-sectional, predictive, concurrent per-currency, and panel fixed-effect regressions with HAC standard errors. Supplementary scripts collect ECB SPF average USD/EUR assumptions and BCB Focus BRL/USD expectations. These public survey data are not identical to the Consensus Economics 3-month expectations used in IMF WP/25/153, but they provide transparent survey-expectations checks for two currency pairs. A separate futures-basis script computes a market-implied approximation from continuous front CME FX futures. This series is useful for comparison, but it is not a constant-maturity OTC forward premium.
 
 ## Replication
 
@@ -60,6 +63,7 @@ pip install -r requirements.txt
 python fx_analysis.py
 python fetch_ecb_spf_expectations.py
 python fetch_bcb_focus_expectations.py
+python fetch_futures_implied_basis.py
 ```
 
 The GitHub Action is configured to run monthly and refresh data and charts.
