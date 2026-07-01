@@ -53,7 +53,7 @@ ADVANCED_ECONOMIES = {"AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD"}
 FIXED_3M_TAU = 0.25
 
 
-def yahoo_futures_close(symbol: str) -> pd.Series:
+def yahoo_futures_history(symbol: str) -> pd.DataFrame:
     period1 = int(pd.Timestamp(START_DATE, tz="UTC").timestamp())
     period2 = int((pd.Timestamp(END_DATE, tz="UTC") + pd.Timedelta(days=1)).timestamp())
     url = YAHOO_CHART_URL.format(symbol=requests.utils.quote(symbol, safe=""))
@@ -71,8 +71,14 @@ def yahoo_futures_close(symbol: str) -> pd.Series:
         raise RuntimeError(f"No Yahoo futures data for {symbol}: {error}")
     timestamps = result.get("timestamp") or []
     closes = result.get("indicators", {}).get("quote", [{}])[0].get("close") or []
-    out = pd.Series(closes, index=pd.to_datetime(timestamps, unit="s", utc=True).tz_convert(None), name=symbol)
-    out = pd.to_numeric(out, errors="coerce").dropna().sort_index()
+    volumes = result.get("indicators", {}).get("quote", [{}])[0].get("volume") or []
+    out = pd.DataFrame(
+        {"close": closes, "volume": volumes},
+        index=pd.to_datetime(timestamps, unit="s", utc=True).tz_convert(None),
+    )
+    out["close"] = pd.to_numeric(out["close"], errors="coerce")
+    out["volume"] = pd.to_numeric(out["volume"], errors="coerce")
+    out = out.dropna(subset=["close"]).sort_index()
     if out.empty:
         raise RuntimeError(f"Yahoo futures data for {symbol} returned no valid closes")
     return out
@@ -128,12 +134,13 @@ def build_futures_basis() -> pd.DataFrame:
     rows = []
     for config in FUTURES:
         print(f"Fetching futures basis for {config.code} ({config.yahoo_symbol})")
-        close = yahoo_futures_close(config.yahoo_symbol)
+        history = yahoo_futures_history(config.yahoo_symbol)
         # CME FX futures are quoted in USD per foreign currency unit. The main panel uses
         # foreign currency per USD, so the futures quote is inverted before comparison.
-        futures_local_per_usd = (1.0 / close).resample("ME").last().rename("futures_local_per_usd")
+        futures_local_per_usd = (1.0 / history["close"]).resample("ME").last().rename("futures_local_per_usd")
+        monthly_volume = history["volume"].resample("ME").median().rename("futures_monthly_median_volume")
         spot = monthly_fx(config.spot_series, config.invert_spot).rename("spot_local_per_usd")
-        df = pd.concat([spot, futures_local_per_usd], axis=1).dropna()
+        df = pd.concat([spot, futures_local_per_usd, monthly_volume], axis=1).dropna(subset=["spot_local_per_usd", "futures_local_per_usd"])
         df["futures_log_basis"] = np.log(df["futures_local_per_usd"]) - np.log(df["spot_local_per_usd"])
         df["futures_pct_basis"] = 100.0 * (df["futures_local_per_usd"] / df["spot_local_per_usd"] - 1.0)
         df["ccy"] = config.code
