@@ -10,7 +10,17 @@ import numpy as np
 import pandas as pd
 import requests
 
-from fx_analysis import CHART_DIR, DATA_DIR, PALETTE, START_DATE, END_DATE, monthly_fx, set_custom_style
+from fx_analysis import (
+    CHART_DIR,
+    DATA_DIR,
+    PALETTE,
+    START_DATE,
+    END_DATE,
+    CURRENCIES,
+    monthly_fx,
+    monthly_rate,
+    set_custom_style,
+)
 
 YAHOO_CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
@@ -21,6 +31,9 @@ class FuturesConfig:
     yahoo_symbol: str
     spot_series: str
     invert_spot: bool
+
+
+RATE_CONFIGS = {config.code: config for config in CURRENCIES}
 
 
 FUTURES = [
@@ -62,6 +75,44 @@ def yahoo_futures_close(symbol: str) -> pd.Series:
     return out
 
 
+
+
+def third_wednesday(year: int, month: int) -> pd.Timestamp:
+    first = pd.Timestamp(year=year, month=month, day=1)
+    days_until_wednesday = (2 - first.weekday()) % 7
+    return first + pd.Timedelta(days=days_until_wednesday + 14)
+
+
+def next_imm_expiry(date: pd.Timestamp) -> pd.Timestamp:
+    date = pd.Timestamp(date).normalize()
+    for year in [date.year, date.year + 1]:
+        for month in [3, 6, 9, 12]:
+            expiry = third_wednesday(year, month)
+            if expiry > date:
+                return expiry
+    raise RuntimeError(f"Could not assign IMM expiry for {date}")
+
+
+def add_maturity_adjusted_gap(panel: pd.DataFrame) -> pd.DataFrame:
+    pieces = []
+    us_rate = monthly_rate("TB3MS").rename("us_rate")
+    for ccy, df in panel.groupby("ccy", sort=False):
+        rate_config = RATE_CONFIGS[ccy]
+        foreign_rate = monthly_rate(rate_config.rate_3m_series, rate_config.rate_source).rename("foreign_rate")
+        out = df.copy()
+        out = out.merge(us_rate.rename_axis("date").reset_index(), on="date", how="left")
+        out = out.merge(foreign_rate.rename_axis("date").reset_index(), on="date", how="left")
+        out["assumed_expiry_date"] = pd.to_datetime(out["date"]).map(next_imm_expiry)
+        out["assumed_tau_years"] = (out["assumed_expiry_date"] - pd.to_datetime(out["date"])).dt.days / 365.0
+        out["rate_differential_us_minus_foreign"] = out["us_rate"] - out["foreign_rate"]
+        out["futures_implied_no_arbitrage_gap"] = (
+            out["futures_log_basis"] - out["rate_differential_us_minus_foreign"] * out["assumed_tau_years"]
+        )
+        out["futures_implied_no_arbitrage_gap_bps"] = 10000.0 * out["futures_implied_no_arbitrage_gap"]
+        pieces.append(out)
+    return pd.concat(pieces, ignore_index=True).sort_values(["date", "ccy"])
+
+
 def build_futures_basis() -> pd.DataFrame:
     rows = []
     for config in FUTURES:
@@ -79,6 +130,30 @@ def build_futures_basis() -> pd.DataFrame:
         rows.append(df.reset_index(names="date"))
         time.sleep(0.25)
     return pd.concat(rows, ignore_index=True).sort_values(["date", "ccy"])
+
+
+def plot_no_arbitrage_gap(panel: pd.DataFrame) -> None:
+    set_custom_style()
+    valid = panel.dropna(subset=["futures_implied_no_arbitrage_gap_bps"])
+    fig, ax = plt.subplots(figsize=(6, 4.2), dpi=300)
+    average = valid.groupby("date")["futures_implied_no_arbitrage_gap_bps"].mean()
+    ax.plot(average.index, average, color=PALETTE[0], label="Cross-currency average")
+    for i, (ccy, df) in enumerate(valid.groupby("ccy")):
+        ax.plot(pd.to_datetime(df["date"]), df["futures_implied_no_arbitrage_gap_bps"], color=PALETTE[(i + 2) % len(PALETTE)], alpha=0.22, lw=0.8)
+    ax.axhline(0, color=PALETTE[8], lw=0.8, alpha=0.7)
+    ax.set_title("Futures-Implied No-Arbitrage Gap")
+    ax.set_ylabel("Basis points")
+    ax.xaxis.set_major_locator(mdates.YearLocator(3))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    ax.legend(loc="upper left")
+    note = (
+        "Source: Author's calculations using Yahoo Finance continuous CME FX futures, FRED/BCB spot and short-rate data. "
+        "Maturity is approximated by the next quarterly IMM expiry; this is a public proxy, not contract-level CIP."
+    )
+    fig.text(0.10, 0.025, note, ha="left", va="bottom", fontsize=6.5, color=PALETTE[8], wrap=True)
+    plt.subplots_adjust(left=0.13, right=0.97, top=0.86, bottom=0.22)
+    fig.savefig(CHART_DIR / "futures_implied_no_arbitrage_gap.png", bbox_inches="tight")
+    plt.close(fig)
 
 
 def plot_futures_basis(panel: pd.DataFrame) -> None:
@@ -107,11 +182,13 @@ def plot_futures_basis(panel: pd.DataFrame) -> None:
 def main() -> None:
     DATA_DIR.mkdir(exist_ok=True)
     CHART_DIR.mkdir(exist_ok=True)
-    panel = build_futures_basis()
+    panel = add_maturity_adjusted_gap(build_futures_basis())
     panel.to_csv(DATA_DIR / "futures_implied_fx_basis.csv", index=False, float_format="%.10g")
     plot_futures_basis(panel)
+    plot_no_arbitrage_gap(panel)
     print(f"Wrote {DATA_DIR / 'futures_implied_fx_basis.csv'}")
     print(f"Wrote {CHART_DIR / 'futures_implied_fx_basis.png'}")
+    print(f"Wrote {CHART_DIR / 'futures_implied_no_arbitrage_gap.png'}")
 
 
 if __name__ == "__main__":
