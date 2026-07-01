@@ -49,6 +49,9 @@ FUTURES = [
     FuturesConfig("ZAR", "6Z=F", "DEXSFUS", False),
 ]
 
+ADVANCED_ECONOMIES = {"AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD"}
+FIXED_3M_TAU = 0.25
+
 
 def yahoo_futures_close(symbol: str) -> pd.Series:
     period1 = int(pd.Timestamp(START_DATE, tz="UTC").timestamp())
@@ -93,7 +96,7 @@ def next_imm_expiry(date: pd.Timestamp) -> pd.Timestamp:
     raise RuntimeError(f"Could not assign IMM expiry for {date}")
 
 
-def add_maturity_adjusted_gap(panel: pd.DataFrame) -> pd.DataFrame:
+def add_futures_implied_basis_proxies(panel: pd.DataFrame) -> pd.DataFrame:
     pieces = []
     us_rate = monthly_rate("TB3MS").rename("us_rate")
     for ccy, df in panel.groupby("ccy", sort=False):
@@ -105,10 +108,18 @@ def add_maturity_adjusted_gap(panel: pd.DataFrame) -> pd.DataFrame:
         out["assumed_expiry_date"] = pd.to_datetime(out["date"]).map(next_imm_expiry)
         out["assumed_tau_years"] = (out["assumed_expiry_date"] - pd.to_datetime(out["date"])).dt.days / 365.0
         out["rate_differential_us_minus_foreign"] = out["us_rate"] - out["foreign_rate"]
-        out["futures_implied_no_arbitrage_gap"] = (
+        out["region_group"] = np.where(out["ccy"].isin(ADVANCED_ECONOMIES), "Advanced economies", "Emerging markets")
+        out["futures_implied_basis_next_imm"] = (
             out["futures_log_basis"] - out["rate_differential_us_minus_foreign"] * out["assumed_tau_years"]
         )
-        out["futures_implied_no_arbitrage_gap_bps"] = 10000.0 * out["futures_implied_no_arbitrage_gap"]
+        out["futures_implied_basis_fixed_3m"] = (
+            out["futures_log_basis"] - out["rate_differential_us_minus_foreign"] * FIXED_3M_TAU
+        )
+        out["futures_implied_basis_next_imm_bps"] = 10000.0 * out["futures_implied_basis_next_imm"]
+        out["futures_implied_basis_fixed_3m_bps"] = 10000.0 * out["futures_implied_basis_fixed_3m"]
+        out["basis_maturity_assumption_spread_bps"] = (
+            out["futures_implied_basis_next_imm_bps"] - out["futures_implied_basis_fixed_3m_bps"]
+        )
         pieces.append(out)
     return pd.concat(pieces, ignore_index=True).sort_values(["date", "ccy"])
 
@@ -132,27 +143,74 @@ def build_futures_basis() -> pd.DataFrame:
     return pd.concat(rows, ignore_index=True).sort_values(["date", "ccy"])
 
 
-def plot_no_arbitrage_gap(panel: pd.DataFrame) -> None:
+def plot_futures_implied_basis_proxy(panel: pd.DataFrame) -> None:
     set_custom_style()
-    valid = panel.dropna(subset=["futures_implied_no_arbitrage_gap_bps"])
+    valid = panel.dropna(subset=["futures_implied_basis_next_imm_bps"])
+    summary = valid.groupby("date")["futures_implied_basis_next_imm_bps"].agg(
+        median="median",
+        q25=lambda x: x.quantile(0.25),
+        q75=lambda x: x.quantile(0.75),
+    )
+    dates = pd.to_datetime(summary.index)
     fig, ax = plt.subplots(figsize=(6, 4.2), dpi=300)
-    average = valid.groupby("date")["futures_implied_no_arbitrage_gap_bps"].mean()
-    ax.plot(average.index, average, color=PALETTE[0], label="Cross-currency average")
-    for i, (ccy, df) in enumerate(valid.groupby("ccy")):
-        ax.plot(pd.to_datetime(df["date"]), df["futures_implied_no_arbitrage_gap_bps"], color=PALETTE[(i + 2) % len(PALETTE)], alpha=0.22, lw=0.8)
+    ax.fill_between(dates, summary["q25"].to_numpy(), summary["q75"].to_numpy(), color=PALETTE[2], alpha=0.22, label="Interquartile range")
+    ax.plot(dates, summary["median"].to_numpy(), color=PALETTE[0], label="Cross-currency median")
     ax.axhline(0, color=PALETTE[8], lw=0.8, alpha=0.7)
-    ax.set_title("Futures-Implied No-Arbitrage Gap")
+    ax.set_title("Futures-Implied FX Basis Proxy")
     ax.set_ylabel("Basis points")
     ax.xaxis.set_major_locator(mdates.YearLocator(3))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     ax.legend(loc="upper left")
     note = (
         "Source: Author's calculations using Yahoo Finance continuous CME FX futures, FRED/BCB spot and short-rate data. "
-        "Maturity is approximated by the next quarterly IMM expiry; this is a public proxy, not contract-level CIP."
+        "Proxy uses next quarterly IMM expiry as assumed maturity; it is not contract-level CIP."
     )
     fig.text(0.10, 0.025, note, ha="left", va="bottom", fontsize=6.5, color=PALETTE[8], wrap=True)
     plt.subplots_adjust(left=0.13, right=0.97, top=0.86, bottom=0.22)
-    fig.savefig(CHART_DIR / "futures_implied_no_arbitrage_gap.png", bbox_inches="tight")
+    fig.savefig(CHART_DIR / "futures_implied_fx_basis_proxy.png", bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_basis_by_group(panel: pd.DataFrame) -> None:
+    set_custom_style()
+    valid = panel.dropna(subset=["futures_implied_basis_next_imm_bps"])
+    grouped = valid.groupby(["date", "region_group"])["futures_implied_basis_next_imm_bps"].median().unstack()
+    fig, ax = plt.subplots(figsize=(6, 4.2), dpi=300)
+    if "Advanced economies" in grouped:
+        ax.plot(pd.to_datetime(grouped.index), grouped["Advanced economies"], color=PALETTE[0], label="Advanced economies")
+    if "Emerging markets" in grouped:
+        ax.plot(pd.to_datetime(grouped.index), grouped["Emerging markets"], color=PALETTE[1], label="Emerging markets")
+    ax.axhline(0, color=PALETTE[8], lw=0.8, alpha=0.7)
+    ax.set_title("Futures-Implied FX Basis Proxy by Group")
+    ax.set_ylabel("Median basis points")
+    ax.xaxis.set_major_locator(mdates.YearLocator(3))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    ax.legend(loc="upper left")
+    note = "Source: Author's calculations using Yahoo Finance continuous CME FX futures, FRED/BCB spot and short-rate data."
+    fig.text(0.10, 0.025, note, ha="left", va="bottom", fontsize=6.5, color=PALETTE[8], wrap=True)
+    plt.subplots_adjust(left=0.13, right=0.97, top=0.86, bottom=0.22)
+    fig.savefig(CHART_DIR / "futures_implied_fx_basis_by_group.png", bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_maturity_assumption_comparison(panel: pd.DataFrame) -> None:
+    set_custom_style()
+    valid = panel.dropna(subset=["futures_implied_basis_next_imm_bps", "futures_implied_basis_fixed_3m_bps"])
+    comparison = valid.groupby("date")[["futures_implied_basis_next_imm_bps", "futures_implied_basis_fixed_3m_bps"]].median()
+    fig, ax = plt.subplots(figsize=(6, 4.2), dpi=300)
+    dates = pd.to_datetime(comparison.index)
+    ax.plot(dates, comparison["futures_implied_basis_next_imm_bps"], color=PALETTE[0], label="Next IMM maturity")
+    ax.plot(dates, comparison["futures_implied_basis_fixed_3m_bps"], color=PALETTE[1], label="Fixed 3-month maturity")
+    ax.axhline(0, color=PALETTE[8], lw=0.8, alpha=0.7)
+    ax.set_title("Maturity Assumption Comparison")
+    ax.set_ylabel("Median basis points")
+    ax.xaxis.set_major_locator(mdates.YearLocator(3))
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
+    ax.legend(loc="upper left")
+    note = "Source: Author's calculations. Difference between lines shows sensitivity to the assumed maturity of the continuous front futures contract."
+    fig.text(0.10, 0.025, note, ha="left", va="bottom", fontsize=6.5, color=PALETTE[8], wrap=True)
+    plt.subplots_adjust(left=0.13, right=0.97, top=0.86, bottom=0.22)
+    fig.savefig(CHART_DIR / "futures_basis_maturity_comparison.png", bbox_inches="tight")
     plt.close(fig)
 
 
@@ -182,13 +240,17 @@ def plot_futures_basis(panel: pd.DataFrame) -> None:
 def main() -> None:
     DATA_DIR.mkdir(exist_ok=True)
     CHART_DIR.mkdir(exist_ok=True)
-    panel = add_maturity_adjusted_gap(build_futures_basis())
+    panel = add_futures_implied_basis_proxies(build_futures_basis())
     panel.to_csv(DATA_DIR / "futures_implied_fx_basis.csv", index=False, float_format="%.10g")
     plot_futures_basis(panel)
-    plot_no_arbitrage_gap(panel)
+    plot_futures_implied_basis_proxy(panel)
+    plot_basis_by_group(panel)
+    plot_maturity_assumption_comparison(panel)
     print(f"Wrote {DATA_DIR / 'futures_implied_fx_basis.csv'}")
     print(f"Wrote {CHART_DIR / 'futures_implied_fx_basis.png'}")
-    print(f"Wrote {CHART_DIR / 'futures_implied_no_arbitrage_gap.png'}")
+    print(f"Wrote {CHART_DIR / 'futures_implied_fx_basis_proxy.png'}")
+    print(f"Wrote {CHART_DIR / 'futures_implied_fx_basis_by_group.png'}")
+    print(f"Wrote {CHART_DIR / 'futures_basis_maturity_comparison.png'}")
 
 
 if __name__ == "__main__":

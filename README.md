@@ -38,7 +38,9 @@ Charts:
 - `chart/ecb_spf_eur_usd_expectations.png`
 - `chart/bcb_focus_brl_usd_expectations.png`
 - `chart/futures_implied_fx_basis.png`
-- `chart/futures_implied_no_arbitrage_gap.png`
+- `chart/futures_implied_fx_basis_proxy.png`
+- `chart/futures_implied_fx_basis_by_group.png`
+- `chart/futures_basis_maturity_comparison.png`
 
 ## Data Sources
 
@@ -55,7 +57,7 @@ No FRED API key is required.
 
 For each currency, the script constructs a monthly exchange-rate series against the US dollar and computes the foreign-US 3-month interest-rate differential. Currency excess returns are measured as the interest differential minus the monthly log exchange-rate change. Dealer positioning is measured as dealer long minus short positions, scaled by a 12-month moving average of open interest. The project also reports comparable net-position measures for asset managers, leveraged funds, other reportables, and non-reportables.
 
-The script estimates cross-sectional, predictive, concurrent per-currency, and panel fixed-effect regressions with HAC standard errors. Supplementary scripts collect ECB SPF average USD/EUR assumptions and BCB Focus BRL/USD expectations. These public survey data are not identical to the Consensus Economics 3-month expectations used in IMF WP/25/153, but they provide transparent survey-expectations checks for two currency pairs. A separate futures-basis script computes a market-implied approximation from continuous front CME FX futures. It also reports a maturity-adjusted no-arbitrage-gap proxy using the next quarterly IMM expiry as the assumed maturity. This series is useful for comparison, but it is not a contract-level CIP deviation or a constant-maturity OTC forward premium.
+The script estimates cross-sectional, predictive, concurrent per-currency, and panel fixed-effect regressions with HAC standard errors. Supplementary scripts collect ECB SPF average USD/EUR assumptions and BCB Focus BRL/USD expectations. These public survey data are not identical to the Consensus Economics 3-month expectations used in IMF WP/25/153, but they provide transparent survey-expectations checks for two currency pairs. A separate futures-basis script computes a market-implied approximation from continuous front CME FX futures. It also reports two maturity assumptions for a futures-implied FX basis proxy: next quarterly IMM expiry and fixed three-month maturity. The main chart reports the cross-currency median and interquartile range, with separate advanced-economy and emerging-market summaries. These series are useful for comparison, but they are not contract-level CIP deviations or constant-maturity OTC forward premia.
 
 ## Replication
 
