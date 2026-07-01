@@ -23,7 +23,8 @@ Data:
 - `data/cftc_position_decomposition.csv`: dealer, asset-manager, leveraged-fund, other-reportable, and non-reportable net positions by currency.
 - `data/ecb_spf_eur_usd_expectations.csv`: supplementary ECB SPF survey expectations for EUR/USD.
 - `data/bcb_focus_brl_usd_expectations.csv`: supplementary Banco Central do Brasil Focus survey expectations for BRL/USD.
-- `data/futures_implied_fx_basis.csv`: front-futures basis and maturity-adjusted no-arbitrage-gap proxy computed from continuous CME FX futures, spot exchange rates, and short rates.
+- `data/futures_implied_fx_basis.csv`: front-futures basis and maturity-adjusted futures-implied FX basis proxy computed from continuous CME FX futures, spot exchange rates, and short rates.
+- `data/dks_forward_premium_comparison.csv`: comparison between the public futures-implied annualized premium and Du-Keerati-Schreger 3-month forward premium (`rho`).
 
 Charts:
 
@@ -41,6 +42,8 @@ Charts:
 - `chart/futures_implied_fx_basis_proxy.png`
 - `chart/futures_implied_fx_basis_by_group.png`
 - `chart/futures_basis_maturity_comparison.png`
+- `chart/dks_forward_premium_comparison.png`
+- `chart/dks_forward_premium_gap.png`
 
 ## Data Sources
 
@@ -50,6 +53,7 @@ Charts:
 - ECB Survey of Professional Forecasters for a supplementary EUR/USD survey-expectations series.
 - Banco Central do Brasil Focus survey for supplementary BRL/USD exchange-rate expectations.
 - Yahoo Finance historical chart data for continuous CME FX futures used to construct a front-futures basis approximation.
+- Du-Keerati-Schreger government-bond CIP dataset for the published 3-month market-implied forward premium (`rho`), used as a benchmark for the futures premium leg only.
 
 No FRED API key is required.
 
@@ -57,7 +61,7 @@ No FRED API key is required.
 
 For each currency, the script constructs a monthly exchange-rate series against the US dollar and computes the foreign-US 3-month interest-rate differential. Currency excess returns are measured as the interest differential minus the monthly log exchange-rate change. Dealer positioning is measured as dealer long minus short positions, scaled by a 12-month moving average of open interest. The project also reports comparable net-position measures for asset managers, leveraged funds, other reportables, and non-reportables.
 
-The script estimates cross-sectional, predictive, concurrent per-currency, and panel fixed-effect regressions with HAC standard errors. Supplementary scripts collect ECB SPF average USD/EUR assumptions and BCB Focus BRL/USD expectations. These public survey data are not identical to the Consensus Economics 3-month expectations used in IMF WP/25/153, but they provide transparent survey-expectations checks for two currency pairs. A separate futures-basis script computes a market-implied approximation from continuous front CME FX futures. It also reports two maturity assumptions for a futures-implied FX basis proxy: next quarterly IMM expiry and fixed three-month maturity. The main chart reports the cross-currency median and interquartile range, with separate advanced-economy and emerging-market summaries. These series are useful for comparison, but they are not contract-level CIP deviations or constant-maturity OTC forward premia.
+The script estimates cross-sectional, predictive, concurrent per-currency, and panel fixed-effect regressions with HAC standard errors. Supplementary scripts collect ECB SPF average USD/EUR assumptions and BCB Focus BRL/USD expectations. These public survey data are not identical to the Consensus Economics 3-month expectations used in IMF WP/25/153, but they provide transparent survey-expectations checks for two currency pairs. A separate futures-basis script computes a market-implied approximation from continuous front CME FX futures. It also reports two maturity assumptions for a futures-implied FX basis proxy: next quarterly IMM expiry and fixed three-month maturity. The main chart reports the cross-currency median and interquartile range, with separate advanced-economy and emerging-market summaries. These series are useful for comparison, but they are not contract-level CIP deviations or constant-maturity OTC forward premia. The DKS comparison uses only their published forward-premium variable, not their government-bond CIP deviation, because this project uses a different rate leg.
 
 ## Replication
 
@@ -67,6 +71,7 @@ python fx_analysis.py
 python fetch_ecb_spf_expectations.py
 python fetch_bcb_focus_expectations.py
 python fetch_futures_implied_basis.py
+python compare_dks_forward_premium.py
 ```
 
 The GitHub Action is configured to run monthly and refresh data and charts.

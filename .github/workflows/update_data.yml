@@ -40,9 +40,10 @@ jobs:
           python fetch_ecb_spf_expectations.py
           python fetch_bcb_focus_expectations.py
           python fetch_futures_implied_basis.py
+          python compare_dks_forward_premium.py
 
       - name: Commit refreshed outputs
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "Update FX currency premia analysis"
-          file_pattern: "data/*.csv chart/*.png README.md fx_analysis.py fetch_ecb_spf_expectations.py fetch_bcb_focus_expectations.py fetch_futures_implied_basis.py requirements.txt Methodology.pdf methodology/main.tex"
+          file_pattern: "data/*.csv chart/*.png README.md fx_analysis.py fetch_ecb_spf_expectations.py fetch_bcb_focus_expectations.py fetch_futures_implied_basis.py compare_dks_forward_premium.py requirements.txt Methodology.pdf methodology/main.tex"
