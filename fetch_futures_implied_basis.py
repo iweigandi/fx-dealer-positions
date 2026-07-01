@@ -111,8 +111,10 @@ def add_futures_implied_basis_proxies(panel: pd.DataFrame) -> pd.DataFrame:
         out = df.copy()
         out = out.merge(us_rate.rename_axis("date").reset_index(), on="date", how="left")
         out = out.merge(foreign_rate.rename_axis("date").reset_index(), on="date", how="left")
-        out["assumed_expiry_date"] = pd.to_datetime(out["date"]).map(next_imm_expiry)
-        out["assumed_tau_years"] = (out["assumed_expiry_date"] - pd.to_datetime(out["date"])).dt.days / 365.0
+        maturity_start = pd.to_datetime(out["futures_observation_date"]).fillna(pd.to_datetime(out["date"]))
+        out["assumed_expiry_date"] = maturity_start.map(next_imm_expiry)
+        out["assumed_tau_years"] = (out["assumed_expiry_date"] - maturity_start).dt.days / 365.0
+        out["assumed_tau_days"] = out["assumed_tau_years"] * 365.0
         out["rate_differential_us_minus_foreign"] = out["us_rate"] - out["foreign_rate"]
         out["region_group"] = np.where(out["ccy"].isin(ADVANCED_ECONOMIES), "Advanced economies", "Emerging markets")
         out["futures_implied_basis_next_imm"] = (
@@ -138,9 +140,10 @@ def build_futures_basis() -> pd.DataFrame:
         # CME FX futures are quoted in USD per foreign currency unit. The main panel uses
         # foreign currency per USD, so the futures quote is inverted before comparison.
         futures_local_per_usd = (1.0 / history["close"]).resample("ME").last().rename("futures_local_per_usd")
+        futures_observation_date = history["close"].dropna().resample("ME").apply(lambda s: s.index.max()).rename("futures_observation_date")
         monthly_volume = history["volume"].resample("ME").median().rename("futures_monthly_median_volume")
         spot = monthly_fx(config.spot_series, config.invert_spot).rename("spot_local_per_usd")
-        df = pd.concat([spot, futures_local_per_usd, monthly_volume], axis=1).dropna(subset=["spot_local_per_usd", "futures_local_per_usd"])
+        df = pd.concat([spot, futures_local_per_usd, futures_observation_date, monthly_volume], axis=1).dropna(subset=["spot_local_per_usd", "futures_local_per_usd"])
         df["futures_log_basis"] = np.log(df["futures_local_per_usd"]) - np.log(df["spot_local_per_usd"])
         df["futures_pct_basis"] = 100.0 * (df["futures_local_per_usd"] / df["spot_local_per_usd"] - 1.0)
         df["ccy"] = config.code

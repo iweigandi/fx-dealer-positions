@@ -25,6 +25,7 @@ Data:
 - `data/bcb_focus_brl_usd_expectations.csv`: supplementary Banco Central do Brasil Focus survey expectations for BRL/USD.
 - `data/futures_implied_fx_basis.csv`: front-futures basis and maturity-adjusted futures-implied FX basis proxy computed from continuous CME FX futures, spot exchange rates, and short rates.
 - `data/dks_forward_premium_comparison.csv`: comparison between the public futures-implied annualized premium and Du-Keerati-Schreger 3-month forward premium (`rho`).
+- `data/dks_forward_premium_proxy_grid.csv`: validation grid over maturity windows, day-count conventions, expiry assumptions, and volume thresholds.
 
 Charts:
 
@@ -62,7 +63,7 @@ No FRED API key is required.
 
 For each currency, the script constructs a monthly exchange-rate series against the US dollar and computes the foreign-US 3-month interest-rate differential. Currency excess returns are measured as the interest differential minus the monthly log exchange-rate change. Dealer positioning is measured as dealer long minus short positions, scaled by a 12-month moving average of open interest. The project also reports comparable net-position measures for asset managers, leveraged funds, other reportables, and non-reportables.
 
-The script estimates cross-sectional, predictive, concurrent per-currency, and panel fixed-effect regressions with HAC standard errors. Supplementary scripts collect ECB SPF average USD/EUR assumptions and BCB Focus BRL/USD expectations. These public survey data are not identical to the Consensus Economics 3-month expectations used in IMF WP/25/153, but they provide transparent survey-expectations checks for two currency pairs. A separate futures-basis script computes a market-implied approximation from continuous front CME FX futures. It also reports two maturity assumptions for a futures-implied FX basis proxy: next quarterly IMM expiry and fixed three-month maturity. The main chart reports the cross-currency median and interquartile range, with separate advanced-economy and emerging-market summaries. These series are useful for comparison, but they are not contract-level CIP deviations or constant-maturity OTC forward premia. The DKS comparison uses only their published forward-premium variable, not their government-bond CIP deviation, because this project uses a different rate leg. The preferred futures comparison uses observations where the front futures contract has 60-95 days to the assumed IMM expiry and monthly median futures volume is at least 10,000 contracts. This keeps the comparison close to a 3-month forward premium while filtering out thin futures observations.
+The script estimates cross-sectional, predictive, concurrent per-currency, and panel fixed-effect regressions with HAC standard errors. Supplementary scripts collect ECB SPF average USD/EUR assumptions and BCB Focus BRL/USD expectations. These public survey data are not identical to the Consensus Economics 3-month expectations used in IMF WP/25/153, but they provide transparent survey-expectations checks for two currency pairs. A separate futures-basis script computes a market-implied approximation from continuous front CME FX futures. It also reports two maturity assumptions for a futures-implied FX basis proxy: next quarterly IMM expiry and fixed three-month maturity. The main chart reports the cross-currency median and interquartile range, with separate advanced-economy and emerging-market summaries. These series are useful for comparison, but they are not contract-level CIP deviations or constant-maturity OTC forward premia. The DKS comparison uses only their published forward-premium variable, not their government-bond CIP deviation, because this project uses a different rate leg. A validation grid tests maturity windows, day-count conventions, expiry assumptions, and volume thresholds. The preferred advanced-economy rule uses observations where the front futures contract has 60-80 days to the assumed IMM expiry, ACT/360 annualization, and monthly median futures volume is at least 10,000 contracts. This materially improves the advanced-currency proxy, but it keeps only a small validation sample and does not solve the emerging-market mismatch.
 
 ## Replication
 
@@ -73,6 +74,7 @@ python fetch_ecb_spf_expectations.py
 python fetch_bcb_focus_expectations.py
 python fetch_futures_implied_basis.py
 python compare_dks_forward_premium.py
+python grid_search_futures_proxy.py
 ```
 
 The GitHub Action is configured to run monthly and refresh data and charts.

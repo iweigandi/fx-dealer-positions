@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import requests
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,15 +10,31 @@ import pandas as pd
 
 from fx_analysis import CHART_DIR, DATA_DIR, PALETTE, set_custom_style
 
+DKS_URL = "https://jschreger.s3.us-east-2.amazonaws.com/cip_dataset_v4.csv"
 DKS_CACHE = Path(".cache") / "dks_cip_dataset_v4.csv"
 PANEL_CURRENCIES = ["AUD", "BRL", "CAD", "CHF", "EUR", "GBP", "JPY", "MXN", "NZD", "ZAR"]
 ADVANCED_ECONOMIES = {"AUD", "CAD", "CHF", "EUR", "GBP", "JPY", "NZD"}
 LIQUIDITY_VOLUME_THRESHOLD = 10_000
+PREFERRED_MATURITY_LOWER_DAYS = 60
+PREFERRED_MATURITY_UPPER_DAYS = 80
+PREFERRED_DAY_COUNT = 360
+
+
+def ensure_dks_cache() -> None:
+    if DKS_CACHE.exists() and DKS_CACHE.stat().st_size > 100_000_000:
+        return
+    DKS_CACHE.parent.mkdir(exist_ok=True)
+    print(f"Downloading DKS dataset to {DKS_CACHE}")
+    with requests.get(DKS_URL, stream=True, timeout=60) as response:
+        response.raise_for_status()
+        with DKS_CACHE.open("wb") as handle:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    handle.write(chunk)
 
 
 def load_dks_forward_premium() -> pd.DataFrame:
-    if not DKS_CACHE.exists():
-        raise FileNotFoundError(f"Missing {DKS_CACHE}. Download cip_dataset_v4.csv from the DKS public data page first.")
+    ensure_dks_cache()
     pieces = []
     for chunk in pd.read_csv(DKS_CACHE, usecols=["currency", "tenor", "date", "rho"], chunksize=200000):
         chunk = chunk[(chunk["tenor"].eq("3m")) & (chunk["currency"].isin(PANEL_CURRENCIES))].copy()
@@ -41,17 +58,19 @@ def build_comparison() -> pd.DataFrame:
     # annualizes log(F/S) by the assumed maturity of the front futures contract.
     futures["futures_premium_next_imm_pct_ann"] = 100.0 * futures["futures_log_basis"] / futures["assumed_tau_years"]
     futures["futures_premium_fixed_3m_pct_ann"] = 100.0 * futures["futures_log_basis"] / 0.25
-    futures["assumed_tau_days"] = futures["assumed_tau_years"] * 365.0
+    futures["assumed_tau_days"] = futures["assumed_tau_days"].fillna(futures["assumed_tau_years"] * 365.0)
     futures["near_3m_front_contract"] = futures["assumed_tau_days"].between(60, 95)
+    futures["preferred_maturity_window"] = futures["assumed_tau_days"].between(PREFERRED_MATURITY_LOWER_DAYS, PREFERRED_MATURITY_UPPER_DAYS)
     futures["futures_premium_near_3m_pct_ann"] = futures["futures_premium_next_imm_pct_ann"].where(futures["near_3m_front_contract"])
+    futures["futures_premium_preferred_raw_pct_ann"] = 100.0 * futures["futures_log_basis"] / (futures["assumed_tau_days"] / PREFERRED_DAY_COUNT)
     dks = load_dks_forward_premium()
     out = futures.merge(dks, on=["date", "ccy"], how="inner")
     out["region_group"] = np.where(out["ccy"].isin(ADVANCED_ECONOMIES), "Advanced economies", "Emerging markets")
     out["premium_gap_next_imm_pct_ann"] = out["futures_premium_next_imm_pct_ann"] - out["dks_forward_premium_3m_pct_ann"]
     out["premium_gap_fixed_3m_pct_ann"] = out["futures_premium_fixed_3m_pct_ann"] - out["dks_forward_premium_3m_pct_ann"]
     out["liquid_futures_observation"] = out["futures_monthly_median_volume"].fillna(0).ge(LIQUIDITY_VOLUME_THRESHOLD)
-    out["preferred_futures_observation"] = out["near_3m_front_contract"] & out["liquid_futures_observation"]
-    out["futures_premium_preferred_pct_ann"] = out["futures_premium_near_3m_pct_ann"].where(out["preferred_futures_observation"])
+    out["preferred_futures_observation"] = out["preferred_maturity_window"] & out["liquid_futures_observation"]
+    out["futures_premium_preferred_pct_ann"] = out["futures_premium_preferred_raw_pct_ann"].where(out["preferred_futures_observation"])
     out["premium_gap_near_3m_pct_ann"] = out["futures_premium_near_3m_pct_ann"] - out["dks_forward_premium_3m_pct_ann"]
     out["premium_gap_preferred_pct_ann"] = out["futures_premium_preferred_pct_ann"] - out["dks_forward_premium_3m_pct_ann"]
     return out.sort_values(["date", "ccy"])
@@ -72,7 +91,7 @@ def plot_comparison(df: pd.DataFrame) -> None:
     ax.legend(loc="upper left")
     note = (
         "Source: Author's calculations using Du-Keerati-Schreger 3-month rho and Yahoo Finance continuous CME FX futures. "
-        "The futures proxy uses observations with 60-95 days to assumed IMM expiry and monthly median volume of at least 10,000 contracts."
+        "The futures proxy uses observations with 60-80 days to assumed IMM expiry, ACT/360 annualization, and monthly median volume of at least 10,000 contracts."
     )
     fig.text(0.10, 0.025, note, ha="left", va="bottom", fontsize=6.5, color=PALETTE[8], wrap=True)
     plt.subplots_adjust(left=0.13, right=0.97, top=0.86, bottom=0.22)
@@ -98,7 +117,7 @@ def plot_group_comparison(df: pd.DataFrame) -> None:
     axes[-1].xaxis.set_major_locator(mdates.YearLocator(3))
     axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     fig.suptitle("Forward Premium Comparison by Currency Group", fontsize=12)
-    note = "Source: Author's calculations using DKS 3-month rho and Yahoo continuous CME FX futures. Futures series uses observations with 60-95 days to assumed IMM expiry and monthly median volume of at least 10,000 contracts."
+    note = "Source: Author's calculations using DKS 3-month rho and Yahoo continuous CME FX futures. Futures series uses observations with 60-80 days to assumed IMM expiry, ACT/360 annualization, and monthly median volume of at least 10,000 contracts."
     fig.text(0.10, 0.025, note, ha="left", va="bottom", fontsize=6.5, color=PALETTE[8], wrap=True)
     plt.subplots_adjust(left=0.13, right=0.97, top=0.88, bottom=0.18, hspace=0.34)
     fig.savefig(CHART_DIR / "dks_forward_premium_group_comparison.png", bbox_inches="tight")
@@ -123,7 +142,7 @@ def plot_gap(df: pd.DataFrame) -> None:
     ax.xaxis.set_major_locator(mdates.YearLocator(3))
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y"))
     ax.legend(loc="upper left")
-    note = "Source: Author's calculations. The comparison uses liquid near-3M front-futures observations; positive values mean the futures proxy implies a higher annualized premium than DKS rho."
+    note = "Source: Author's calculations. Preferred proxy uses 60-80 days to assumed IMM expiry, ACT/360, and monthly median volume >= 10,000 contracts."
     fig.text(0.10, 0.025, note, ha="left", va="bottom", fontsize=6.5, color=PALETTE[8], wrap=True)
     plt.subplots_adjust(left=0.13, right=0.97, top=0.86, bottom=0.22)
     fig.savefig(CHART_DIR / "dks_forward_premium_gap.png", bbox_inches="tight")
