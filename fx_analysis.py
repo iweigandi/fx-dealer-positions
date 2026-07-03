@@ -111,6 +111,7 @@ def ensure_dirs() -> None:
 
 
 def fred_series(series_id: str, start: str = START_DATE, end: str = END_DATE) -> pd.Series:
+    CACHE_DIR.mkdir(exist_ok=True)
     cache_path = CACHE_DIR / f"fred_{series_id}.csv"
     cache_is_fresh = cache_path.exists() and (time.time() - cache_path.stat().st_mtime < CACHE_MAX_AGE_SECONDS)
     if cache_is_fresh:
@@ -134,6 +135,7 @@ def fred_series(series_id: str, start: str = START_DATE, end: str = END_DATE) ->
 
 
 def bcb_sgs_series(series_id: str, start: str = START_DATE, end: str = END_DATE) -> pd.Series:
+    CACHE_DIR.mkdir(exist_ok=True)
     cache_path = CACHE_DIR / f"bcb_sgs_{series_id}.csv"
     cache_is_fresh = cache_path.exists() and (time.time() - cache_path.stat().st_mtime < CACHE_MAX_AGE_SECONDS)
     if cache_is_fresh:
@@ -192,6 +194,7 @@ def controls() -> pd.DataFrame:
 
 
 def load_tff() -> pd.DataFrame:
+    CACHE_DIR.mkdir(exist_ok=True)
     cache_path = CACHE_DIR / "cftc_tff_financial_futures.csv"
     cache_is_fresh = cache_path.exists() and (time.time() - cache_path.stat().st_mtime < CACHE_MAX_AGE_SECONDS)
     if cache_is_fresh:
