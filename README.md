@@ -12,6 +12,8 @@ The project focuses on open-data indicators that can be updated automatically:
 
 The sample currently includes AUD, BRL, CAD, CHF, EUR, GBP, JPY, MXN, NZD, and ZAR. Most short-rate differentials use public FRED/OECD short-rate series. BRL uses Banco Central do Brasil SGS series 4389 as a public CDI short-rate proxy.
 
+![FX dealer positions summary](chart/fx_dealer_positions_summary.png)
+
 ## Outputs
 
 Data:
