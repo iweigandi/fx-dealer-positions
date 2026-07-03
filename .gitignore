@@ -17,3 +17,12 @@ methodology/*.log
 methodology/*.out
 methodology/*.pdf
 LOCAL_NOTES_FOR_CODEX.md
+
+AGENT_NOTES.md
+.tmp_*.py
+search_fred.py
+search_policy_rates.py
+data/futures_maturity_adjustment_diagnostic.csv
+chart/futures_premium_constant_3m.png
+Methodology.pdf
+methodology/

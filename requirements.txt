@@ -4,4 +4,4 @@ requests>=2.32
 statsmodels>=0.14
 matplotlib>=3.8
 cot_reports>=0.1.3
-Pillow>=10
+adjustText>=1.3

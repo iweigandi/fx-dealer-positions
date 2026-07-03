@@ -1,14 +1,10 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
-from pathlib import Path
-import urllib.parse
-
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import requests
 
-from fx_analysis import CHART_DIR, DATA_DIR, PALETTE, fred_series, set_custom_style
+from fx_analysis import DATA_DIR, fred_series
 
 BCB_URL = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais"
 
@@ -70,57 +66,19 @@ def add_spot(df: pd.DataFrame) -> pd.DataFrame:
     out["expected_log_change_brl_per_usd"] = np.log(out["expected_brl_per_usd_median"]) - np.log(out["spot_brl_per_usd"])
     out["horizon_years_approx"] = out["target_year"] - out["survey_date"].dt.year
     keep = [
-        "survey_date",
-        "target_year",
-        "expected_brl_per_usd_mean",
-        "expected_brl_per_usd_median",
-        "expected_brl_per_usd_std",
-        "expected_brl_per_usd_min",
-        "expected_brl_per_usd_max",
-        "respondents",
-        "calculation_basis",
-        "spot_brl_per_usd",
-        "expected_log_change_brl_per_usd",
+        "survey_date", "target_year", "expected_brl_per_usd_mean", "expected_brl_per_usd_median",
+        "expected_brl_per_usd_std", "expected_brl_per_usd_min", "expected_brl_per_usd_max",
+        "respondents", "calculation_basis", "spot_brl_per_usd", "expected_log_change_brl_per_usd",
         "horizon_years_approx",
     ]
     return out[keep].sort_values(["survey_date", "target_year"]).reset_index(drop=True)
 
 
-def plot_focus(df: pd.DataFrame) -> None:
-    set_custom_style()
-    latest_target_each_survey = df.dropna(subset=["expected_log_change_brl_per_usd"]).sort_values(
-        ["survey_date", "target_year"]
-    ).groupby("survey_date").tail(1)
-    monthly = latest_target_each_survey.set_index("survey_date")["expected_log_change_brl_per_usd"].resample("ME").last().dropna()
-    fig, ax = plt.subplots(figsize=(6, 4.2), dpi=300)
-    ax.plot(monthly.index, monthly, color=PALETTE[0], label="Survey expected change")
-    ax.axhline(0, color=PALETTE[8], lw=0.8, alpha=0.7)
-    ax.set_title("BCB Focus BRL/USD Survey Expectations")
-    ax.set_ylabel("Expected log change in BRL per USD")
-    ax.legend(loc="upper left")
-    fig.text(
-        0.10,
-        0.025,
-        "Source: Author's calculations using Banco Central do Brasil Focus expectations and FRED spot exchange-rate data.",
-        ha="left",
-        va="bottom",
-        fontsize=6.5,
-        color=PALETTE[8],
-        wrap=True,
-    )
-    plt.subplots_adjust(left=0.13, right=0.97, top=0.86, bottom=0.22)
-    fig.savefig(CHART_DIR / "bcb_focus_brl_usd_expectations.png", bbox_inches="tight")
-    plt.close(fig)
-
-
 def main() -> None:
     DATA_DIR.mkdir(exist_ok=True)
-    CHART_DIR.mkdir(exist_ok=True)
     focus = add_spot(fetch_bcb_focus_exchange_rate())
     focus.to_csv(DATA_DIR / "bcb_focus_brl_usd_expectations.csv", index=False, float_format="%.10g")
-    plot_focus(focus)
     print(f"Wrote {DATA_DIR / 'bcb_focus_brl_usd_expectations.csv'}")
-    print(f"Wrote {CHART_DIR / 'bcb_focus_brl_usd_expectations.png'}")
 
 
 if __name__ == "__main__":
